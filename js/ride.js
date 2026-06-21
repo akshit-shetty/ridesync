@@ -533,7 +533,6 @@ async function onGPSUpdate(pos) {
   }
 
   // Register or Update in Firebase
-  const now = Date.now();
   if (!isRiderRegistered) {
     isRiderRegistered = true;
     try {
