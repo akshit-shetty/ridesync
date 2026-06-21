@@ -49,6 +49,7 @@ let rideId = null;
 let unsubscribeRiders = null;
 let unsubscribeRide = null;
 let currentRiders = [];
+let isRiderRegistered = false;
 
 // ===== DESTINATION STATE =====
 let destination = null;        // { name, lat, lng } or null
@@ -200,7 +201,7 @@ function setupMapWithGPS() {
     navigator.permissions.query({ name: "geolocation" }).then((result) => {
       if (result.state === "granted") {
         gpsOverlay.classList.add("hidden");
-        initMapAndTracking();
+        startTracking();
       }
       // else wait for user click
     }).catch(() => {
@@ -266,8 +267,7 @@ async function initMapAndTracking(initialLat, initialLng) {
     }
   });
 
-  // Register myself in Firebase
-  await registerRider(centerLat, centerLng);
+  // We will register in Firebase as soon as we acquire the first actual GPS coordinate in onGPSUpdate to prevent mock location jumps
 
   // Load ride doc in real-time to sync start time and status
   try {
@@ -401,15 +401,15 @@ async function initMapAndTracking(initialLat, initialLng) {
 }
 
 // ===== FIREBASE: REGISTER RIDER =====
-async function registerRider(lat, lng) {
+async function registerRider(lat, lng, speed = 0, heading = 0) {
   const riderRef = doc(db, "rides", rideId, "riders", session.riderId);
   await setDoc(riderRef, {
     name: session.name,
     color: session.color,
     lat,
     lng,
-    speed: 0,
-    heading: 0,
+    speed,
+    heading,
     lastSeen: serverTimestamp(),
     online: true,
   });
@@ -437,21 +437,25 @@ async function onGPSUpdate(pos) {
   const { latitude: lat, longitude: lng, speed, heading } = pos.coords;
   const speedKmh = speed ? Math.round(speed * 3.6) : 0;
 
-  // Update distance
+  // Update distance with high-fidelity tracking (filter noise, prevent incremental movement loss)
   if (lastLat !== null && lastLng !== null) {
     const dist = calcDistance(lastLat, lastLng, lat, lng);
-    // Filter out GPS noise (< 5m jumps)
     if (dist > 0.005) {
       totalDistance += dist;
-      // Add to path
       if (!riderPaths[session.riderId]) riderPaths[session.riderId] = [];
       riderPaths[session.riderId].push([lat, lng]);
       updateMyPolyline();
+      
+      lastLat = lat;
+      lastLng = lng;
     }
+  } else {
+    // First actual GPS coordinate lock
+    lastLat = lat;
+    lastLng = lng;
+    if (!riderPaths[session.riderId]) riderPaths[session.riderId] = [];
+    riderPaths[session.riderId].push([lat, lng]);
   }
-
-  lastLat = lat;
-  lastLng = lng;
 
   // Track top speed
   if (speedKmh > topSpeed) topSpeed = speedKmh;
@@ -471,9 +475,18 @@ async function onGPSUpdate(pos) {
     map.panTo([lat, lng]);
   }
 
-  // Throttle Firebase writes to every 3 seconds
+  // Register or Update in Firebase
   const now = Date.now();
-  if (now - lastFirebaseUpdate >= FIREBASE_UPDATE_INTERVAL) {
+  if (!isRiderRegistered) {
+    isRiderRegistered = true;
+    try {
+      await registerRider(lat, lng, speedKmh, heading || 0);
+      lastFirebaseUpdate = now;
+    } catch (e) {
+      console.warn("Failed to register rider:", e);
+      isRiderRegistered = false;
+    }
+  } else if (now - lastFirebaseUpdate >= FIREBASE_UPDATE_INTERVAL) {
     lastFirebaseUpdate = now;
     try {
       const riderRef = doc(db, "rides", rideId, "riders", session.riderId);
@@ -1263,4 +1276,5 @@ function cleanup() {
   clearTrafficSegments();
   isNavigating = false;
   hasFitBounds = false;
+  isRiderRegistered = false;
 }
