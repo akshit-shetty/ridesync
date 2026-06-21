@@ -42,6 +42,7 @@ let totalDistance = 0;
 let lastLat = null, lastLng = null;
 let topSpeed = 0;
 let elapsedSeconds = 0;
+let lastGPSUpdateTime = null;
 
 let db = null;
 let session = null;
@@ -434,27 +435,49 @@ let lastFirebaseUpdate = 0;
 const FIREBASE_UPDATE_INTERVAL = 3000; // 3 seconds
 
 async function onGPSUpdate(pos) {
+  const now = Date.now();
   const { latitude: lat, longitude: lng, speed, heading } = pos.coords;
-  const speedKmh = speed ? Math.round(speed * 3.6) : 0;
 
-  // Update distance with high-fidelity tracking (filter noise, prevent incremental movement loss)
-  if (lastLat !== null && lastLng !== null) {
+  // Calculate speed (with manual distance-time calculation fallback if native speed is null/0)
+  let speedKmh = 0;
+  if (speed !== null && speed !== undefined && speed > 0) {
+    speedKmh = Math.round(speed * 3.6);
+  } else if (lastLat !== null && lastLng !== null && lastGPSUpdateTime !== null) {
     const dist = calcDistance(lastLat, lastLng, lat, lng);
-    if (dist > 0.005) {
-      totalDistance += dist;
-      if (!riderPaths[session.riderId]) riderPaths[session.riderId] = [];
-      riderPaths[session.riderId].push([lat, lng]);
-      updateMyPolyline();
-      
+    const timeDiffHrs = (now - lastGPSUpdateTime) / (1000 * 60 * 60);
+    if (timeDiffHrs > 0 && dist > 0.005) {
+      const calculatedSpeed = dist / timeDiffHrs;
+      if (calculatedSpeed < 150) {
+        speedKmh = Math.round(calculatedSpeed);
+      }
+    }
+  }
+  lastGPSUpdateTime = now;
+
+  // Update distance with high-fidelity tracking (filter noise, prevent incremental movement loss) - ONLY when actively navigating
+  if (isNavigating) {
+    if (lastLat !== null && lastLng !== null) {
+      const dist = calcDistance(lastLat, lastLng, lat, lng);
+      if (dist > 0.005) {
+        totalDistance += dist;
+        if (!riderPaths[session.riderId]) riderPaths[session.riderId] = [];
+        riderPaths[session.riderId].push([lat, lng]);
+        updateMyPolyline();
+        
+        lastLat = lat;
+        lastLng = lng;
+      }
+    } else {
+      // First actual GPS coordinate lock during active navigation
       lastLat = lat;
       lastLng = lng;
+      if (!riderPaths[session.riderId]) riderPaths[session.riderId] = [];
+      riderPaths[session.riderId].push([lat, lng]);
     }
   } else {
-    // First actual GPS coordinate lock
+    // Keep reference coordinate updated to current position before ride officially starts
     lastLat = lat;
     lastLng = lng;
-    if (!riderPaths[session.riderId]) riderPaths[session.riderId] = [];
-    riderPaths[session.riderId].push([lat, lng]);
   }
 
   // Track top speed
@@ -710,7 +733,7 @@ function updateRidersPanel(riders) {
           subtitle = `${speed} km/h`;
         } else if (lastLat !== null && lastLng !== null && rider.lat && rider.lng) {
           const dist = calcDistance(lastLat, lastLng, rider.lat, rider.lng);
-          subtitle = `${dist.toFixed(1)} km away`;
+          subtitle = `${dist.toFixed(1)} km away · ${rider.speed || 0} km/h`;
         } else {
           subtitle = "Calculating…";
         }
