@@ -11,7 +11,7 @@ export function generateId(length = 20) {
 /**
  * Show a toast notification
  */
-export function showToast(message, type = '', duration = 3000) {
+export function showToast(message, type = '', duration = 1500) {
   const toast = document.getElementById('toast');
   if (!toast) return;
   toast.textContent = message;
