@@ -904,7 +904,8 @@ function setupUIHandlers() {
   document.getElementById("shareModalClose").addEventListener("click", () => closeModal("shareModal"));
 
   // Copy link
-  const rideLink = `${window.location.origin}${window.location.pathname.replace("ride.html", "")}index.html?ride=${rideId}`;
+  const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/')) + '/';
+  const rideLink = `${window.location.origin}${basePath}index.html?ride=${rideId}`;
   document.getElementById("shareLinkInput").value = rideLink;
 
   document.getElementById("copyLinkBtn").addEventListener("click", () => {
