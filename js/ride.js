@@ -212,25 +212,40 @@ function setupMapWithGPS() {
 }
 
 function startTracking() {
+  // Option 1: Try high accuracy first (5 second timeout)
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       document.getElementById("gpsOverlay").classList.add("hidden");
       initMapAndTracking(pos.coords.latitude, pos.coords.longitude);
     },
     (err) => {
-      const overlay = document.getElementById("gpsOverlay");
-      overlay.style.opacity = "1";
-      const btn = document.getElementById("enableGpsBtn");
-      btn.disabled = false;
-      btn.textContent = "📍 Try Again";
+      console.warn("High accuracy GPS failed, trying fallback...", err);
+      // Option 2: Fallback to low accuracy (network/wifi triangulation)
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          document.getElementById("gpsOverlay").classList.add("hidden");
+          initMapAndTracking(pos.coords.latitude, pos.coords.longitude);
+        },
+        (fallbackErr) => {
+          console.error("GPS tracking completely failed:", fallbackErr);
+          const overlay = document.getElementById("gpsOverlay");
+          if (overlay) overlay.style.opacity = "1";
+          const btn = document.getElementById("enableGpsBtn");
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = "📍 Try Again";
+          }
 
-      if (err.code === 1) {
-        showToast("GPS access denied. Please allow location in browser settings.", "error", 5000);
-      } else {
-        showToast("Couldn't get your location. Check GPS signal.", "error");
-      }
+          if (fallbackErr.code === 1) {
+            showToast("GPS access denied. Please allow location in browser settings.", "error", 5000);
+          } else {
+            showToast("Couldn't get your location. Check GPS signal.", "error");
+          }
+        },
+        { enableHighAccuracy: false, timeout: 10000 }
+      );
     },
-    { enableHighAccuracy: true, timeout: 15000 }
+    { enableHighAccuracy: true, timeout: 5000 }
   );
 }
 
