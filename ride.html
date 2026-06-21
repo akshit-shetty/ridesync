@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="RideSync — Live ride tracking map" />
+  <title>RideSync — Live Ride</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="assets/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <!-- Leaflet Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <!-- Leaflet Routing Machine -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="css/ride.css" />
+  <style>
+    /* Hide LRM's default UI panel — we use our own HUD */
+    .leaflet-routing-container { display: none !important; }
+    .leaflet-routing-error { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- GPS Permission Overlay -->
+  <div class="gps-overlay" id="gpsOverlay">
+    <div class="gps-icon">
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+        <circle cx="20" cy="20" r="8" fill="#FF6B35"/>
+        <circle cx="20" cy="20" r="14" stroke="#FF6B35" stroke-width="2" opacity="0.4"/>
+        <circle cx="20" cy="20" r="20" stroke="#FF6B35" stroke-width="1" opacity="0.15"/>
+        <line x1="20" y1="2" x2="20" y2="8" stroke="#FF6B35" stroke-width="2" stroke-linecap="round"/>
+        <line x1="20" y1="32" x2="20" y2="38" stroke="#FF6B35" stroke-width="2" stroke-linecap="round"/>
+        <line x1="2" y1="20" x2="8" y2="20" stroke="#FF6B35" stroke-width="2" stroke-linecap="round"/>
+        <line x1="32" y1="20" x2="38" y2="20" stroke="#FF6B35" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <h1 class="gps-title">Enable GPS</h1>
+    <p class="gps-desc">RideSync needs your location to show you and your squad on the live map. Your location is only shared with riders in this session.</p>
+    <button class="gps-btn" id="enableGpsBtn">
+      📍 Enable Location
+    </button>
+  </div>
+
+  <!-- Map -->
+  <div id="map"></div>
+
+  <!-- Re-center Button -->
+  <button class="recenter-btn hidden" id="recenterBtn">
+    🎯 Re-center
+  </button>
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="ride-info">
+      <span class="ride-logo">🏍️ RideSync</span>
+      <span class="ride-title-text" id="rideTitleDisplay">Live Ride</span>
+    </div>
+    <div class="top-actions">
+      <div class="live-badge">
+        <span class="live-dot"></span>
+        LIVE
+      </div>
+    </div>
+  </div>
+
+  <!-- Riders Side Panel -->
+  <div class="riders-panel" id="ridersPanel">
+    <div class="panel-header" id="panelHeader">
+      <span class="panel-title">Riders</span>
+      <span class="rider-count-badge" id="riderCountBadge">1</span>
+    </div>
+    <div class="riders-list" id="ridersList">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+
+  <!-- My Location Button -->
+  <button class="my-location-btn" id="myLocationBtn" aria-label="Go to my location">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <circle cx="10" cy="10" r="4" fill="#00D4FF"/>
+      <circle cx="10" cy="10" r="8" stroke="#00D4FF" stroke-width="1.5" opacity="0.5"/>
+      <line x1="10" y1="1" x2="10" y2="4" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="10" y1="16" x2="10" y2="19" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="1" y1="10" x2="4" y2="10" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="16" y1="10" x2="19" y2="10" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+  </button>
+
+  <!-- Stats HUD (Bottom) -->
+  <div class="stats-hud">
+    <div class="hud-card">
+      <div class="hud-drag-handle"></div>
+
+      <!-- Destination row (hidden until destination is set) -->
+      <div class="hud-dest-row" id="hudDestRow" style="display:none">
+        <div class="hud-dest-icon">🏁</div>
+        <div class="hud-dest-info">
+          <div class="hud-dest-name" id="hudDestName">—</div>
+          <div class="hud-dest-dist" id="hudDestDist">Calculating route…</div>
+        </div>
+        <button class="hud-route-toggle" id="routeToggleBtn" title="Toggle route">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 14 L6 2 L10 10 L14 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="hud-stats">
+        <div class="hud-stat">
+          <div class="hud-stat-value speed-val" id="speedDisplay">0</div>
+          <div class="hud-stat-unit">km/h</div>
+        </div>
+        <div class="hud-stat">
+          <div class="hud-stat-value dist-val" id="distDisplay">0.0</div>
+          <div class="hud-stat-unit">km</div>
+        </div>
+        <div class="hud-stat">
+          <div class="hud-stat-value time-val" id="timeDisplay">00:00</div>
+          <div class="hud-stat-unit">duration</div>
+        </div>
+      </div>
+      <div class="hud-actions">
+        <button class="hud-btn hud-btn-share" id="shareBtn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="13" cy="3" r="2" stroke="currentColor" stroke-width="1.5"/>
+            <circle cx="3" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/>
+            <circle cx="13" cy="13" r="2" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="5" y1="7" x2="11" y2="4" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="5" y1="9" x2="11" y2="12" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+          Invite Riders
+        </button>
+        <button class="hud-btn hud-btn-start" id="startNavBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          Start Ride
+        </button>
+        <button class="hud-btn hud-btn-end" id="endRideBtn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+          End Ride
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Share Modal -->
+  <div class="modal-overlay" id="shareModal">
+    <div class="modal-sheet">
+      <div class="modal-drag"></div>
+      <h2 class="modal-title">Invite Your Squad 🏍️</h2>
+      <p class="modal-desc">Share this link — friends open it on their phone and join the live map instantly.</p>
+      <div class="share-link-box">
+        <input type="text" class="share-link-input" id="shareLinkInput" readonly />
+        <button class="share-copy-btn" id="copyLinkBtn">Copy</button>
+      </div>
+      <div class="share-options">
+        <button class="share-option-btn" id="shareWhatsapp">
+          <span class="share-option-icon">💬</span>
+          WhatsApp
+        </button>
+        <button class="share-option-btn" id="shareNative">
+          <span class="share-option-icon">📤</span>
+          Share
+        </button>
+        <button class="share-option-btn" id="shareQr">
+          <span class="share-option-icon">📱</span>
+          QR Code
+        </button>
+      </div>
+      <button class="modal-close" id="shareModalClose">Done</button>
+    </div>
+  </div>
+
+  <!-- End Ride Modal -->
+  <div class="modal-overlay" id="endModal">
+    <div class="modal-sheet end-modal-content">
+      <div class="modal-drag"></div>
+      <span class="end-modal-icon">🏁</span>
+      <h2 class="end-modal-title">End This Ride?</h2>
+      <p style="color: var(--text-secondary); font-size: 0.85rem;">Your ride stats will be shown after ending.</p>
+      <div class="end-modal-stats">
+        <div class="end-stat">
+          <div class="end-stat-value" id="endDistVal">0.0</div>
+          <div class="end-stat-label">km ridden</div>
+        </div>
+        <div class="end-stat">
+          <div class="end-stat-value" id="endTimeVal">00:00</div>
+          <div class="end-stat-label">duration</div>
+        </div>
+        <div class="end-stat">
+          <div class="end-stat-value" id="endTopSpeedVal">0</div>
+          <div class="end-stat-label">top speed</div>
+        </div>
+      </div>
+      <div class="end-modal-btns">
+        <button class="end-btn-confirm" id="confirmEndBtn">🏁 End Ride</button>
+        <button class="end-btn-cancel" id="cancelEndBtn">Keep Riding</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- Leaflet Routing Machine -->
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { firebaseConfig } from "./js/firebase-config.js";
+    import { initRide } from "./js/ride.js";
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    initRide(db);
+  </script>
+</body>
+</html>

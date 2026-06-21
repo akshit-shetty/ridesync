@@ -1,0 +1,8 @@
+.DS_Store
+Thumbs.db
+.antigravityignore
+node_modules/
+.vercel/
+dist/
+build/
+*.log

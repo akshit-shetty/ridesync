@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="RideSync — Real-time group motorcycle ride tracker. See your squad on the map, live." />
+  <title>RideSync — Ride Together</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="assets/icon-192.png" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Background animated grid -->
+  <div class="bg-grid"></div>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <path d="M4 18c0-2.5 1.5-5 4-6l2-3h8l3 4h3l-1 3H4z" fill="#FF6B35" opacity="0.9"/>
+          <circle cx="8" cy="19" r="2.5" fill="#FF6B35"/>
+          <circle cx="20" cy="19" r="2.5" fill="#FF6B35"/>
+          <circle cx="14" cy="8" r="2" fill="#00D4FF"/>
+          <path d="M14 6v-3M12 6l-2-2M16 6l2-2" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="logo-text">RideSync</span>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <main class="main">
+    <section class="hero">
+      <div class="hero-badge">
+        <span class="pulse-dot"></span>
+        Live GPS Tracking
+      </div>
+      <h1 class="hero-title">
+        Ride Together,<br/>
+        <span class="gradient-text">Stay Connected</span>
+      </h1>
+      <p class="hero-subtitle">
+        Track your squad in real-time on the map. Share a link, everyone joins instantly — no sign-up needed.
+      </p>
+
+      <!-- Rider count display -->
+      <div class="stats-row">
+        <div class="stat-item">
+          <span class="stat-icon">🏍️</span>
+          <span class="stat-label">Live Tracking</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-icon">📍</span>
+          <span class="stat-label">Real-time Map</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-icon">🔗</span>
+          <span class="stat-label">Share & Join</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Action Cards -->
+    <section class="action-section">
+
+      <!-- Create Ride Card -->
+      <div class="action-card create-card" id="createCard">
+        <div class="card-header">
+          <div class="card-icon create-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="#FF6B35" stroke-width="1.5"/>
+              <path d="M12 8v8M8 12h8" stroke="#FF6B35" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div>
+            <h2 class="card-title">Start a Ride</h2>
+            <p class="card-desc">You're the lead rider — create the session</p>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="createName">Your Rider Name</label>
+          <input
+            type="text"
+            id="createName"
+            class="form-input"
+            placeholder="e.g. Akshit"
+            maxlength="20"
+            autocomplete="off"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="rideTitle">Ride Name (optional)</label>
+          <input
+            type="text"
+            id="rideTitle"
+            class="form-input"
+            placeholder="e.g. Sunday Expressway Run"
+            maxlength="40"
+            autocomplete="off"
+          />
+        </div>
+        <div class="form-group destination-group">
+          <label class="form-label" for="destinationInput">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="margin-right:5px;vertical-align:middle">
+              <path d="M6.5 1C4.567 1 3 2.567 3 4.5c0 2.7 3.5 7.5 3.5 7.5S10 7.2 10 4.5C10 2.567 8.433 1 6.5 1z" fill="#FF6B35" opacity="0.9"/>
+              <circle cx="6.5" cy="4.5" r="1.5" fill="white"/>
+            </svg>
+            Destination <span style="color:#FF6B35">*</span>
+          </label>
+          <div class="destination-search-wrap" style="position:relative">
+            <input
+              type="text"
+              id="destinationInput"
+              class="form-input"
+              placeholder="Where are you heading? Search a place…"
+              autocomplete="off"
+            />
+            <div class="dest-suggestions" id="destSuggestions"></div>
+          </div>
+          <!-- Hidden fields to hold resolved coordinates -->
+          <input type="hidden" id="destLat" />
+          <input type="hidden" id="destLng" />
+          <input type="hidden" id="destName" />
+          <!-- Shows after user selects a suggestion -->
+          <div class="dest-selected-badge" id="destSelectedBadge">
+            📍 <span id="destSelectedText"></span>
+            <button class="dest-clear-btn" id="destClearBtn" title="Clear destination">✕</button>
+          </div>
+        </div>
+        <div class="avatar-picker">
+          <label class="form-label">Pick Your Color</label>
+          <div class="avatar-colors" id="createColors">
+            <button class="color-btn active" data-color="#FF6B35" style="background:#FF6B35" aria-label="Orange"></button>
+            <button class="color-btn" data-color="#00D4FF" style="background:#00D4FF" aria-label="Cyan"></button>
+            <button class="color-btn" data-color="#A855F7" style="background:#A855F7" aria-label="Purple"></button>
+            <button class="color-btn" data-color="#22C55E" style="background:#22C55E" aria-label="Green"></button>
+            <button class="color-btn" data-color="#F59E0B" style="background:#F59E0B" aria-label="Amber"></button>
+            <button class="color-btn" data-color="#EC4899" style="background:#EC4899" aria-label="Pink"></button>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="createRideBtn">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 2l1.8 5.5H18l-4.9 3.6 1.9 5.7L10 13.2l-5 3.6 1.9-5.7L2 7.5h6.2z" fill="currentColor"/>
+          </svg>
+          Start Ride
+        </button>
+      </div>
+
+      <div class="divider-or"><span>OR</span></div>
+
+      <!-- Join Ride Card -->
+      <div class="action-card join-card" id="joinCard">
+        <div class="card-header">
+          <div class="card-icon join-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4" stroke="#00D4FF" stroke-width="1.5" stroke-linecap="round"/>
+              <polyline points="10 17 15 12 10 7" stroke="#00D4FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="15" y1="12" x2="3" y2="12" stroke="#00D4FF" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div>
+            <h2 class="card-title">Join a Ride</h2>
+            <p class="card-desc">Got a link from your squad? Paste it below</p>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="joinName">Your Rider Name</label>
+          <input
+            type="text"
+            id="joinName"
+            class="form-input"
+            placeholder="e.g. Rohan"
+            maxlength="20"
+            autocomplete="off"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="joinLink">Ride Link or ID</label>
+          <input
+            type="text"
+            id="joinLink"
+            class="form-input"
+            placeholder="Paste the ride link or ID here"
+            autocomplete="off"
+          />
+        </div>
+        <div class="avatar-picker">
+          <label class="form-label">Pick Your Color</label>
+          <div class="avatar-colors" id="joinColors">
+            <button class="color-btn" data-color="#FF6B35" style="background:#FF6B35" aria-label="Orange"></button>
+            <button class="color-btn active" data-color="#00D4FF" style="background:#00D4FF" aria-label="Cyan"></button>
+            <button class="color-btn" data-color="#A855F7" style="background:#A855F7" aria-label="Purple"></button>
+            <button class="color-btn" data-color="#22C55E" style="background:#22C55E" aria-label="Green"></button>
+            <button class="color-btn" data-color="#F59E0B" style="background:#F59E0B" aria-label="Amber"></button>
+            <button class="color-btn" data-color="#EC4899" style="background:#EC4899" aria-label="Pink"></button>
+          </div>
+        </div>
+        <button class="btn btn-secondary" id="joinRideBtn">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 18a8 8 0 100-16 8 8 0 000 16z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10 6v4l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          Join Ride
+        </button>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="how-section">
+      <h3 class="how-title">How It Works</h3>
+      <div class="steps-row">
+        <div class="step">
+          <div class="step-num">1</div>
+          <p class="step-text">One rider creates the session & gets a shareable link</p>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <p class="step-text">Share link via WhatsApp — friends open & join</p>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <p class="step-text">Everyone sees each other live on the map 🗺️</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast notification -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+    }
+  </script>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { firebaseConfig } from "./js/firebase-config.js";
+    import { initHome } from "./js/home.js";
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    initHome(db);
+  </script>
+</body>
+</html>
