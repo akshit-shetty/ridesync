@@ -676,3 +676,24 @@ body {
   color: var(--text-primary);
 }
 
+/* ===== ADDITIONAL MOBILE RESPONSIVE STYLES ===== */
+@media (max-width: 580px) {
+  /* Stack steps vertically on mobile */
+  .steps-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .step-arrow {
+    transform: rotate(90deg);
+    padding-top: 0;
+    margin: -4px 0;
+  }
+
+  /* Compress padding slightly for smaller viewports */
+  .action-card {
+    padding: 20px;
+  }
+}
+
