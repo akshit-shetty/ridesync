@@ -47,6 +47,8 @@ let db = null;
 let session = null;
 let rideId = null;
 let unsubscribeRiders = null;
+let unsubscribeRide = null;
+let currentRiders = [];
 
 // ===== DESTINATION STATE =====
 let destination = null;        // { name, lat, lng } or null
@@ -162,6 +164,14 @@ export function initRide(firestoreDb) {
   // Setup UI
   setupMapWithGPS();
   setupUIHandlers();
+
+  // Only the host is allowed to start/pause navigation
+  if (session && !session.isHost) {
+    const startNavBtn = document.getElementById("startNavBtn");
+    if (startNavBtn) {
+      startNavBtn.style.display = "none";
+    }
+  }
 }
 
 // ===== GPS + MAP SETUP =====
@@ -223,29 +233,7 @@ function startTracking() {
 }
 
 async function initMapAndTracking(initialLat, initialLng) {
-  // Load ride doc — title only (destination is already in session payload)
-  try {
-    const rideDoc = await getDoc(doc(db, "rides", rideId));
-    if (rideDoc.exists()) {
-      const data = rideDoc.data();
-      const title = data.title || "Live Ride";
-      document.getElementById("rideTitleDisplay").textContent = title;
-      document.title = `RideSync — ${title}`;
-
-      // Fallback: load destination from Firestore if not in session payload
-      if (!destination && data.destinationLat && data.destinationLng) {
-        destination = {
-          name: data.destinationName || "Destination",
-          lat: data.destinationLat,
-          lng: data.destinationLng,
-        };
-      }
-    }
-  } catch (e) {
-    console.warn("Could not load ride doc:", e);
-  }
-
-  // Initialize Leaflet map
+  // Initialize Leaflet map first
   const centerLat = initialLat || 19.076;
   const centerLng = initialLng || 72.877;
 
@@ -281,7 +269,121 @@ async function initMapAndTracking(initialLat, initialLng) {
   // Register myself in Firebase
   await registerRider(centerLat, centerLng);
 
-  // If destination exists, place marker, show HUD and initialize route immediately using start location
+  // Load ride doc in real-time to sync start time and status
+  try {
+    unsubscribeRide = onSnapshot(doc(db, "rides", rideId), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const title = data.title || "Live Ride";
+        document.getElementById("rideTitleDisplay").textContent = title;
+        document.title = `RideSync — ${title}`;
+
+        // Fallback: load destination from Firestore if not in session payload
+        if (!destination && data.destinationLat && data.destinationLng) {
+          destination = {
+            name: data.destinationName || "Destination",
+            lat: data.destinationLat,
+            lng: data.destinationLng,
+          };
+          placeDestinationMarker();
+          showDestinationHUD();
+          routeInitialized = true;
+          lastRouteUpdateLat = centerLat;
+          lastRouteUpdateLng = centerLng;
+          initRoutingControl(centerLat, centerLng);
+        }
+
+        // Synchronize navigation mode and timer for both host and guest riders
+        if (data.status === "started" && data.startedAt) {
+          const startedAtMs = data.startedAt.seconds 
+            ? data.startedAt.seconds * 1000 
+            : (data.startedAt.toMillis ? data.startedAt.toMillis() : new Date(data.startedAt).getTime());
+
+          if (!isNavigating) {
+            isNavigating = true;
+            isMapCentered = true;
+
+            // Update Start Ride button if visible (for host)
+            const startNavBtn = document.getElementById("startNavBtn");
+            if (startNavBtn) {
+              startNavBtn.classList.add("navigating");
+              startNavBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="6" y="4" width="4" height="16"></rect>
+                  <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+                Pause Navigation
+              `;
+            }
+
+            const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+            elapsedSeconds = elapsed;
+
+            startTimer(startedAtMs);
+
+            if (lastLat && lastLng && map) {
+              map.flyTo([lastLat, lastLng], 18, { animate: true, duration: 1.2 });
+            }
+
+            if (session && !session.isHost) {
+              showToast("The host has started the ride! 🏍️", "success");
+            } else {
+              showToast("Navigation started 🏍️", "success");
+            }
+          } else {
+            // If already navigating but timestamp shifted (e.g. host reset timer), resync timer
+            const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+            if (Math.abs(elapsedSeconds - elapsed) > 3) {
+              elapsedSeconds = elapsed;
+              startTimer(startedAtMs);
+            }
+          }
+        } else if (data.status === "paused" || !data.status) {
+          // Sync elapsed time even when paused initially
+          if (data.elapsedSeconds !== undefined) {
+            elapsedSeconds = data.elapsedSeconds;
+            const timeEl = document.getElementById("timeDisplay");
+            if (timeEl) timeEl.textContent = formatTime(elapsedSeconds);
+          }
+
+          if (isNavigating) {
+            isNavigating = false;
+            
+            // Hide recenter button
+            const recenterBtn = document.getElementById("recenterBtn");
+            if (recenterBtn) recenterBtn.classList.add("hidden");
+
+            // Update Start Ride button if visible (for host)
+            const startNavBtn = document.getElementById("startNavBtn");
+            if (startNavBtn) {
+              startNavBtn.classList.remove("navigating");
+              startNavBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Start Ride
+              `;
+            }
+
+            if (timerInterval) {
+              clearInterval(timerInterval);
+              timerInterval = null;
+            }
+
+            if (session && !session.isHost) {
+              showToast("The host has paused the ride", "info");
+            } else {
+              showToast("Navigation paused", "info");
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.warn("Could not subscribe to ride doc:", e);
+  }
+
+  // If destination exists in session payload, place marker, show HUD and initialize route immediately using start location
   if (destination) {
     placeDestinationMarker();
     showDestinationHUD();
@@ -359,7 +461,10 @@ async function onGPSUpdate(pos) {
   document.getElementById("distDisplay").textContent = totalDistance.toFixed(1);
 
   // Update map marker
-  updateMyMarker(lat, lng, session.color, session.name, speedKmh);
+  updateMyMarker(lat, lng, session.color, session.name, speedKmh, heading || 0);
+
+  // Refresh riders panel distances immediately with new GPS coords
+  updateRidersPanel(currentRiders);
 
   // Smoothly center map on user if navigating and centered (Google Maps focus)
   if (isNavigating && isMapCentered && map) {
@@ -407,9 +512,9 @@ async function onGPSUpdate(pos) {
 }
 
 // ===== MAP MARKER: ME =====
-function updateMyMarker(lat, lng, color, name, speed) {
+function updateMyMarker(lat, lng, color, name, speed, heading = 0) {
   const initials = getInitials(name);
-  const icon = createRiderIcon(initials, color, name, true);
+  const icon = createRiderIcon(initials, color, name, true, heading);
 
   if (!myMarker) {
     myMarker = L.marker([lat, lng], { icon, zIndexOffset: 1000 }).addTo(map);
@@ -452,18 +557,19 @@ function listenToRiders() {
       }
     });
 
-    updateRidersPanel(riders);
+    currentRiders = riders;
+    updateRidersPanel(currentRiders);
   });
 }
 
 // ===== MAP MARKER: OTHER RIDERS =====
 function updateOtherRiderMarker(riderId, data) {
-  const { lat, lng, color, name, speed = 0, online } = data;
+  const { lat, lng, color, name, speed = 0, online, heading = 0 } = data;
   if (!lat || !lng) return;
 
   const initials = getInitials(name || "?");
   const markerColor = online ? color : "#555570";
-  const icon = createRiderIcon(initials, markerColor, name, false);
+  const icon = createRiderIcon(initials, markerColor, name, false, heading);
 
   if (!riderMarkers[riderId]) {
     riderMarkers[riderId] = L.marker([lat, lng], { icon }).addTo(map);
@@ -494,14 +600,36 @@ function updateOtherRiderMarker(riderId, data) {
 }
 
 // ===== CREATE RIDER ICON =====
-function createRiderIcon(initials, color, name, isMe) {
+function createRiderIcon(initials, color, name, isMe, heading = 0) {
   const size = isMe ? 40 : 34;
   const fontSize = isMe ? "0.8rem" : "0.7rem";
   const border = isMe ? "3px solid white" : "2px solid rgba(255,255,255,0.7)";
   const shadow = isMe ? `0 0 0 3px ${color}44, 0 4px 16px rgba(0,0,0,0.5)` : "0 3px 12px rgba(0,0,0,0.4)";
 
   const html = `
-    <div style="position:relative">
+    <div style="position:relative; width:${size}px; height:${size}px;">
+      <!-- Heading Pointer -->
+      <div style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        transform: translate(-50%, -50%) rotate(${heading}deg);
+        pointer-events: none;
+        z-index: 1;
+      ">
+        <svg width="14" height="12" viewBox="0 0 14 12" style="
+          position: absolute;
+          top: -${size/2 + 10}px;
+          left: -7px;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+        ">
+          <path d="M7 0 L14 12 L0 12 Z" fill="${color}" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- Avatar Circle -->
       <div style="
         width:${size}px;height:${size}px;
         background:${color};
@@ -512,18 +640,14 @@ function createRiderIcon(initials, color, name, isMe) {
         font-size:${fontSize};font-weight:800;color:white;
         box-shadow:${shadow};
         position:relative;
+        z-index: 2;
       ">
         ${initials}
-        <div style="
-          position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);
-          width:0;height:0;
-          border-left:5px solid transparent;
-          border-right:5px solid transparent;
-          border-top:7px solid ${color};
-        "></div>
       </div>
+
+      <!-- Name Tag -->
       <div style="
-        position:absolute;top:-22px;left:50%;transform:translateX(-50%);
+        position:absolute;top:-24px;left:50%;transform:translateX(-50%);
         background:rgba(10,10,15,0.9);
         color:white;font-family:'Outfit',sans-serif;
         font-size:0.6rem;font-weight:600;
@@ -531,6 +655,7 @@ function createRiderIcon(initials, color, name, isMe) {
         white-space:nowrap;
         border:1px solid rgba(255,255,255,0.12);
         backdrop-filter:blur(8px);
+        z-index: 3;
       ">${name}${isMe ? " (You)" : ""}</div>
     </div>
   `;
@@ -538,8 +663,8 @@ function createRiderIcon(initials, color, name, isMe) {
   return L.divIcon({
     html,
     className: "",
-    iconSize: [size, size + 30],
-    iconAnchor: [size / 2, size + 7],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
   });
 }
 
@@ -548,7 +673,7 @@ function updateRidersPanel(riders) {
   const list = document.getElementById("ridersList");
   const badge = document.getElementById("riderCountBadge");
 
-  badge.textContent = riders.length;
+  if (!badge || !list) return;
 
   const onlineRiders = riders.filter((r) => r.online !== false);
   badge.textContent = onlineRiders.length;
@@ -566,6 +691,18 @@ function updateRidersPanel(riders) {
       const speed = rider.speed || 0;
       const online = rider.online !== false;
 
+      let subtitle = "Offline";
+      if (online) {
+        if (isMe) {
+          subtitle = `${speed} km/h`;
+        } else if (lastLat !== null && lastLng !== null && rider.lat && rider.lng) {
+          const dist = calcDistance(lastLat, lastLng, rider.lat, rider.lng);
+          subtitle = `${dist.toFixed(1)} km away`;
+        } else {
+          subtitle = "Calculating…";
+        }
+      }
+
       return `
         <div class="rider-item" onclick="focusRider(${rider.lat}, ${rider.lng})">
           <div class="rider-avatar" style="background:${rider.color || "#555"}; color:white">
@@ -574,7 +711,7 @@ function updateRidersPanel(riders) {
           </div>
           <div class="rider-meta">
             <div class="rider-name">${rider.name}${isMe ? " (You)" : ""}</div>
-            <div class="rider-speed">${online ? `${speed} km/h` : "Offline"}</div>
+            <div class="rider-speed">${subtitle}</div>
           </div>
         </div>
       `;
@@ -590,11 +727,13 @@ window.focusRider = function (lat, lng) {
 };
 
 // ===== TIMER =====
-function startTimer() {
-  startTime = Date.now();
+function startTimer(startedAtMs) {
+  startTime = startedAtMs || Date.now();
+  if (timerInterval) clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-    document.getElementById("timeDisplay").textContent = formatTime(elapsedSeconds);
+    const timeEl = document.getElementById("timeDisplay");
+    if (timeEl) timeEl.textContent = formatTime(elapsedSeconds);
   }, 1000);
 }
 
@@ -948,52 +1087,27 @@ function setupUIHandlers() {
   // Start Ride button
   const startNavBtn = document.getElementById("startNavBtn");
   if (startNavBtn) {
-    startNavBtn.addEventListener("click", () => {
-      if (!isNavigating) {
-        // Start Navigation Mode
-        isNavigating = true;
-        isMapCentered = true;
-        
-        startNavBtn.classList.add("navigating");
-        startNavBtn.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="6" y="4" width="4" height="16"></rect>
-            <rect x="14" y="4" width="4" height="16"></rect>
-          </svg>
-          Pause Navigation
-        `;
-
-        if (!timerInterval) {
-          startTimer();
+    startNavBtn.addEventListener("click", async () => {
+      if (session && session.isHost) {
+        const rideRef = doc(db, "rides", rideId);
+        try {
+          if (!isNavigating) {
+            // Start / Resume Ride
+            await updateDoc(rideRef, {
+              status: "started",
+              startedAt: new Date(Date.now() - elapsedSeconds * 1000)
+            });
+          } else {
+            // Pause Ride
+            await updateDoc(rideRef, {
+              status: "paused",
+              elapsedSeconds: elapsedSeconds
+            });
+          }
+        } catch (e) {
+          console.error("Failed to update ride status:", e);
+          showToast("Failed to update ride status", "error");
         }
-
-        if (lastLat && lastLng && map) {
-          map.flyTo([lastLat, lastLng], 18, { animate: true, duration: 1.2 });
-        } else if (map) {
-          map.setZoom(18);
-        }
-
-        showToast("Navigation started 🏍️", "success");
-      } else {
-        // Stop/Pause Navigation Mode
-        isNavigating = false;
-        const recenterBtn = document.getElementById("recenterBtn");
-        if (recenterBtn) recenterBtn.classList.add("hidden");
-
-        startNavBtn.classList.remove("navigating");
-        startNavBtn.innerHTML = `
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="5 3 19 12 5 21 5 3"/>
-          </svg>
-          Start Ride
-        `;
-
-        if (timerInterval) {
-          clearInterval(timerInterval);
-          timerInterval = null;
-        }
-
-        showToast("Navigation paused", "info");
       }
     });
   }
@@ -1140,6 +1254,10 @@ function cleanup() {
   if (unsubscribeRiders) {
     unsubscribeRiders();
     unsubscribeRiders = null;
+  }
+  if (unsubscribeRide) {
+    unsubscribeRide();
+    unsubscribeRide = null;
   }
   clearRouteDisplay();
   clearTrafficSegments();
