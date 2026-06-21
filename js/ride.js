@@ -212,40 +212,59 @@ function setupMapWithGPS() {
 }
 
 function startTracking() {
-  // Option 1: Try high accuracy first (5 second timeout)
+  let finished = false;
+  
+  // Set a safety timeout of 6 seconds to prevent UI hangs if the browser API freezes
+  const safetyTimeout = setTimeout(() => {
+    if (!finished) {
+      finished = true;
+      console.warn("Geolocation API request timed out (Safety Timer)");
+      handleGPSFailure({ code: 3, message: "Timeout" });
+    }
+  }, 6000);
+
+  function handleGPSSuccess(pos) {
+    if (finished) return;
+    finished = true;
+    clearTimeout(safetyTimeout);
+    document.getElementById("gpsOverlay").classList.add("hidden");
+    initMapAndTracking(pos.coords.latitude, pos.coords.longitude);
+  }
+
+  function handleGPSFailure(err) {
+    if (finished) return;
+    finished = true;
+    clearTimeout(safetyTimeout);
+    
+    console.error("GPS tracking failed:", err);
+    const overlay = document.getElementById("gpsOverlay");
+    if (overlay) overlay.style.opacity = "1";
+    const btn = document.getElementById("enableGpsBtn");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "📍 Try Again";
+    }
+
+    if (err.code === 1) {
+      showToast("GPS access denied. Please allow location in browser settings.", "error", 5000);
+    } else {
+      showToast("Couldn't get your location. Please check that GPS/Location is turned on.", "error", 5000);
+    }
+  }
+
+  // Try standard geolocation request
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      document.getElementById("gpsOverlay").classList.add("hidden");
-      initMapAndTracking(pos.coords.latitude, pos.coords.longitude);
-    },
+    handleGPSSuccess,
     (err) => {
       console.warn("High accuracy GPS failed, trying fallback...", err);
-      // Option 2: Fallback to low accuracy (network/wifi triangulation)
+      // Fallback
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          document.getElementById("gpsOverlay").classList.add("hidden");
-          initMapAndTracking(pos.coords.latitude, pos.coords.longitude);
-        },
-        (fallbackErr) => {
-          console.error("GPS tracking completely failed:", fallbackErr);
-          const overlay = document.getElementById("gpsOverlay");
-          if (overlay) overlay.style.opacity = "1";
-          const btn = document.getElementById("enableGpsBtn");
-          if (btn) {
-            btn.disabled = false;
-            btn.textContent = "📍 Try Again";
-          }
-
-          if (fallbackErr.code === 1) {
-            showToast("GPS access denied. Please allow location in browser settings.", "error", 5000);
-          } else {
-            showToast("Couldn't get your location. Check GPS signal.", "error");
-          }
-        },
-        { enableHighAccuracy: false, timeout: 10000 }
+        handleGPSSuccess,
+        handleGPSFailure,
+        { enableHighAccuracy: false, timeout: 5000 }
       );
     },
-    { enableHighAccuracy: true, timeout: 5000 }
+    { enableHighAccuracy: true, timeout: 4000 }
   );
 }
 
